@@ -29,10 +29,7 @@
  *
  * To compute the distances using the graph rome99.gr, using node 0 as
  * the source:
- * ./omp-bellman-ford 0 < rome99.gr > rome99.dist
- *
- * or simply:
- * ./omp-bellman-ford < rome99.gr > rome99.dist
+ * ./omp-bellman-ford 0 rome99.gr rome99.dist
  *
  ******************************************************************************/
 
@@ -45,7 +42,7 @@
 
 typedef struct {
     int src, dst;
-    float w; 
+    float w;
 } edge_t;
 
 typedef struct {
@@ -105,10 +102,10 @@ void load_dimacs(FILE *f, graph_t* g)
     int cnt = 0; /* edge counter */
     int idx = 0; /* index in the edge array */
     int nmatch;
-    
+
     while ( fgets(buf, buflen, f) ) {
         switch( buf[0] ) {
-        case 'c': 
+        case 'c':
             break; /* ignore comment lines */
         case 'p':
             /* Parse problem format; expect type "shortest path" */
@@ -149,10 +146,10 @@ void load_dimacs(FILE *f, graph_t* g)
         default:
             fprintf(stderr, "FATAL: unrecognized character %c in line \"%s\"\n", buf[0], buf);
             exit(-1);
-        }        
+        }
     }
     assert( 2*cnt == g->m );
-    sort_edges(g); 
+    sort_edges(g);
 }
 
 /* Compute distances from source node |s| using Dijkstra's algorithm.
@@ -163,7 +160,7 @@ void load_dimacs(FILE *f, graph_t* g)
    this is what counts here. |g| is the input graph; |s| is the source
    node id; |d| is the array of distances, that must be pre-allocated
    by the caller to hold |g->n| elements. When the function
-   terminates, d[i] is the distance of node i from node s. */   
+   terminates, d[i] is the distance of node i from node s. */
 void dijkstra(const graph_t* g, int s, float *d)
 {
     const int n = g->n;
@@ -220,7 +217,11 @@ void dijkstra(const graph_t* g, int s, float *d)
    optimized with respect to the "canonical" implementation of the
    Bellman-Ford algorithm: if no distance is updated after a
    relaxation phase, this function terminates immediately since no
-   distances will be updated in future iterations. */
+   distances will be updated in future iterations.
+   g: the graph structure
+   s: source node id
+   d: pointer of distances array
+   */
 void bellmanford(const graph_t* g, int s, float *d)
 {
     const int n = g->n;
@@ -291,15 +292,15 @@ void bellmanford_atomic_inlined(const graph_t* g, int s, float *d)
             const int src = g->edges[j].src;
             const int dst = g->edges[j].dst;
             const float w = g->edges[j].w;
-                        
+
             if ( d[src] + w < d[dst] ) {
                 union {
                     float vf;
                     int vi;
                 } oldval, newval;
-                
+
                 volatile int* dist_p = (int*)(d + dst);
-            
+
                 do {
                     oldval.vf = d[dst];
                     newval.vf = fminf(d[src]+w, d[dst]);
@@ -330,7 +331,7 @@ void bellmanford_none(const graph_t* g, int s, float *d)
     do {
         updated = 0;
         niter++;
-#pragma omp parallel for default(none) shared(g, d) reduction(|:updated) 
+#pragma omp parallel for default(none) shared(g, d) reduction(|:updated)
         for (j=0; j<m; j++) {
             const int src = g->edges[j].src;
             const int dst = g->edges[j].dst;
@@ -366,15 +367,28 @@ int main( int argc, char* argv[] )
     float *d_serial, *d_atomic, *d_none;
     float tstart, t_serial, t_atomic, t_none;
 
+    const char *infile, *outfile;
+    FILE *in, *out;
+    if ( argc != 4 ) {
+        fprintf(stderr, "Usage: %s source_node infile outfile\n", argv[0]);
+        return -1;
+    }
+    // SOURCE = atoi(argv[1]);
+    infile = argv[2];
+    outfile = argv[3];
+
+    in = fopen(infile, "r");
+    if (in == NULL) {
+        fprintf(stderr, "FATAL: can not open \"%s\" for reading\n", infile);
+        exit(-1);
+    }
+
+
     /* required by atomicRelax() */
     assert( sizeof(float) == sizeof(int) );
 
-    if ( argc > 2 ) {
-        fprintf(stderr, "Usage: %s [source_node] < problem_file > distance_file\n", argv[0]);
-        return -1;
-    }
-    
-    load_dimacs(stdin, &g);
+    load_dimacs(in, &g);
+    fclose(in);
 
     const size_t sz = (g.n) * sizeof(*d_serial);
 
@@ -393,24 +407,33 @@ int main( int argc, char* argv[] )
     tstart = omp_get_wtime();
     bellmanford(&g, src, d_serial);
     t_serial = omp_get_wtime() - tstart;
+
     fprintf(stderr, "Serial execution time....... %f\n", t_serial);
 
     tstart = omp_get_wtime();
-    bellmanford_none(&g, src, d_none); 
+    bellmanford_none(&g, src, d_none);
     t_none = omp_get_wtime() - tstart;
     fprintf(stderr, "Par. exec. time (no sync.).. %f (%.2fx)\n", t_none, t_serial/t_none);
     checkdist(d_serial, d_none, g.n);
 
     tstart = omp_get_wtime();
-    bellmanford_atomic(&g, src, d_atomic); 
+    bellmanford_atomic(&g, src, d_atomic);
     t_atomic = omp_get_wtime() - tstart;
     fprintf(stderr, "Par. exec. time (atomic).... %f (%.2fx)\n", t_atomic, t_serial/t_atomic);
     checkdist(d_serial, d_atomic, g.n);
 
+    out = fopen(outfile, "w");
+    if ( out == NULL ) {
+        fprintf(stderr, "FATAL: can not open \"%s\" for writing", outfile);
+        exit(-1);
+    }
+
     /* print distances to stdout */
     for (i=0; i<g.n; i++) {
-        printf("d %d %d %f\n", src, i, d_serial[i]);
+        fprintf(out, "d %d %d %f\n", src, i, d_serial[i]);
     }
+    fclose(out);
+
 
     return 0;
 }
