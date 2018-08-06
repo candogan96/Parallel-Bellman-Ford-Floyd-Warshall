@@ -221,8 +221,9 @@ void dijkstra(const graph_t* g, int s, float *d)
    g: the graph structure
    s: source node id
    d: pointer of distances array
+   p: pointer of predecessors array
    */
-void bellmanford(const graph_t* g, int s, float *d)
+void bellmanford(const graph_t* g, int s, float *d, int *p)
 {
     const int n = g->n;
     const int m = g->m;
@@ -241,6 +242,7 @@ void bellmanford(const graph_t* g, int s, float *d)
             const float w = g->edges[j].w;
             if ( d[src] + w < d[dst] ) {
                 d[dst] = d[src] + w;
+                p[dst] = src;
                 updated = 1;
             }
         }
@@ -365,6 +367,7 @@ int main( int argc, char* argv[] )
     graph_t g;
     int i, src = 0;
     float *d_serial, *d_atomic, *d_none;
+    int *p_serial, *p_atomic, *p_none;
     float tstart, t_serial, t_atomic, t_none;
 
     const char *infile, *outfile;
@@ -396,6 +399,10 @@ int main( int argc, char* argv[] )
     d_atomic = (float*)malloc(sz); assert(d_atomic);
     d_none = (float*)malloc(sz); assert(d_none);
 
+    p_serial = (int*)malloc(g.n * sizeof(int)); assert(p_serial);
+    p_atomic = (int*)malloc(g.n * sizeof(int)); assert(p_atomic);
+    p_none = (int*)malloc(g.n * sizeof(int)); assert(p_none);
+
     if ( argc > 1 ) {
         src = atoi(argv[1]);
         if (src < 0 || src >= g.n) {
@@ -405,9 +412,14 @@ int main( int argc, char* argv[] )
     }
 
     tstart = omp_get_wtime();
-    bellmanford(&g, src, d_serial);
+    bellmanford(&g, src, d_serial, p_serial);
     t_serial = omp_get_wtime() - tstart;
-
+/*
+    printf("node | cost | predecessor\n");
+  	for(i=0; i<g.n; i++) {
+  		printf("%d %f %d\n", i, d_serial[i], p_serial[i]);
+  	}
+*/
     fprintf(stderr, "Serial execution time....... %f\n", t_serial);
 
     tstart = omp_get_wtime();
