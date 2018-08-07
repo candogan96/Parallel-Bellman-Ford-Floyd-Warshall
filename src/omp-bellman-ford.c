@@ -31,6 +31,9 @@
  * the source:
  * ./omp-bellman-ford 0 rome99.gr rome99.dist
  *
+ * To print the path from source 0 to destination 3352 in path.txt file:
+ * ./omp-bellman-ford 0 rome99.gr rome99.dist 3352 path.txt
+ *
  ******************************************************************************/
 
 #include <stdlib.h>
@@ -362,21 +365,31 @@ int checkdist( float *d1, float *d2, int n)
     return 0;
 }
 
+void printPath(FILE *f, int *p, int src, int dst) {
+    if (p[dst] != src)
+        printPath(f, p, src, p[dst]);
+
+    fprintf(f, "%d\n", dst);
+}
+
 int main( int argc, char* argv[] )
 {
     graph_t g;
-    int i, src = 0;
+    int i, src = 0, dst = -1;
     float *d_serial, *d_atomic, *d_none;
     int *p_serial, *p_atomic, *p_none;
     float tstart, t_serial, t_atomic, t_none;
 
-    const char *infile, *outfile;
-    FILE *in, *out;
-    if ( argc != 4 ) {
-        fprintf(stderr, "Usage: %s source_node infile outfile\n", argv[0]);
+    const char *infile, *outfile, *pathoutfile;
+    FILE *in, *out, *pathout;
+    if (argc == 6) {
+        dst = atoi(argv[4]);
+        pathoutfile = argv[5];
+    } else if ( argc != 4 ) {
+        fprintf(stderr, "Usage: %s source_node infile outfile (dst_node) (path_outfile)\n", argv[0]);
         return -1;
     }
-    // SOURCE = atoi(argv[1]);
+    src = atoi(argv[1]);
     infile = argv[2];
     outfile = argv[3];
 
@@ -403,13 +416,10 @@ int main( int argc, char* argv[] )
     p_atomic = (int*)malloc(g.n * sizeof(int)); assert(p_atomic);
     p_none = (int*)malloc(g.n * sizeof(int)); assert(p_none);
 
-    if ( argc > 1 ) {
-        src = atoi(argv[1]);
-        if (src < 0 || src >= g.n) {
-            fprintf(stderr, "FATAL: invalid source node (should be within %d-%d)\n", 0, g.n-1);
-            exit(-1);
-        }
-    }
+      if (src < 0 || src >= g.n || dst >= g.n) {
+          fprintf(stderr, "FATAL: invalid source or destination node (should be within %d-%d)\n", 0, g.n-1);
+          exit(-1);
+      }
 
     tstart = omp_get_wtime();
     bellmanford(&g, src, d_serial, p_serial);
@@ -445,7 +455,14 @@ int main( int argc, char* argv[] )
         fprintf(out, "d %d %d %f\n", src, i, d_serial[i]);
     }
     fclose(out);
-
-
+    if (dst >= 0) {
+      pathout = fopen(pathoutfile, "w");
+      if ( pathout == NULL ) {
+          fprintf(stderr, "FATAL: can not open \"%s\" for writing", pathoutfile);
+          exit(-1);
+      }
+      printPath(pathout, p_serial, src, dst);
+      fclose(pathout);
+    }
     return 0;
 }
