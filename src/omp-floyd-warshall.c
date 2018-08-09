@@ -29,7 +29,7 @@
  * ./omp-floyd-warshall rome99.gr rome99.dist
  *
  * To print a specific path from source 0 to destination 3352 in path.txt file:
- * ./omp-floyd-warshall 0 rome99.gr rome99.dist 3352 path.txt
+ * ./omp-floyd-warshall rome99.gr rome99.dist 0 3352 path.txt
  *
  ******************************************************************************/
 
@@ -162,8 +162,10 @@ void floydwarshall(const graph_t* g, float *d, int *p)
             *IDX_f(d, n, i, j) = INFINITY;
     }
     // set distances between a node and self to zero
-    for(i=0; i<n; i++)
+    for(i=0; i<n; i++){
       *IDX_f(d, n, i, i) = 0.0f;
+      *IDX_i(p, n, i, i) = i;
+    }
 
     // set initial distances to edges weights
     int src, dst;
@@ -194,10 +196,12 @@ void floydwarshall(const graph_t* g, float *d, int *p)
       }
       float d1, d2;
       float *d_i, *d_niter = d + niter * n;
+      int *p_i;
 
-#pragma omp parallel for default(none) shared(d, p, niter, d_niter) private(d1, d2, i, j, d_i)
+#pragma omp parallel for default(none) shared(d, p, niter, d_niter) private(d1, d2, i, j, d_i, p_i)
       for(i=0; i<n; i++) {
         d_i = d + i * n;
+        p_i = p + i * n;
         d1 = *(d_i + niter);
         for (j=0; j<n; j++) {
 
@@ -208,6 +212,7 @@ void floydwarshall(const graph_t* g, float *d, int *p)
 
             if (d1+d2 < *(d_i + j) ) {
               *(d_i + j) = d1+d2;
+              *(p_i + j) = *IDX_i(p, n, niter, j);
             }
         }
       }
@@ -233,19 +238,30 @@ int checkdist( float *d1, float *d2, int n)
 }
 
 
+void printPath(FILE *f, int *p, int n, int src, int dst) {
+    if (p[src * n + dst] != src)
+        printPath(f, p, n, src, p[src * n + dst]);
+
+    fprintf(f, "%d\n", dst);
+}
+
 
 int main( int argc, char* argv[] )
 {
     graph_t g;
-    int i, j;
+    int i, j, src, dst = -1;
     float *d_serial;
     int *p_serial;
     float tstart, t_serial;
 
-    const char *infile, *outfile;
-    FILE *in, *out;
- if ( argc != 3 ) {
-        fprintf(stderr, "Usage: %s infile outfile\n", argv[0]);
+    const char *infile, *outfile, *path_outfile;
+    FILE *in, *out, *pathout;
+    if (argc == 6) {
+        src = atoi(argv[3]);
+        dst = atoi(argv[4]);
+        path_outfile = argv[5];
+    } else if ( argc != 3 ) {
+        fprintf(stderr, "Usage: %s infile outfile (src) (dst) (path_outfile)\n", argv[0]);
         return -1;
     }
     infile = argv[1];
@@ -280,20 +296,7 @@ int main( int argc, char* argv[] )
     t_serial = omp_get_wtime() - tstart;
     fprintf(stderr, "Serial execution time....... %f\n", t_serial);
 
-/*
-    tstart = omp_get_wtime();
-    bellmanford_none(&g, src, d_none);
-    t_none = omp_get_wtime() - tstart;
-    fprintf(stderr, "Par. exec. time (no sync.).. %f (%.2fx)\n", t_none, t_serial/t_none);
-    checkdist(d_serial, d_none, g.n);
 
-    tstart = omp_get_wtime();
-    bellmanford_atomic(&g, src, d_atomic);
-    t_atomic = omp_get_wtime() - tstart;
-    fprintf(stderr, "Par. exec. time (atomic).... %f (%.2fx)\n", t_atomic, t_serial/t_atomic);
-    checkdist(d_serial, d_atomic, g.n);
-
-*/
     out = fopen(outfile, "w");
     if ( out == NULL ) {
         fprintf(stderr, "FATAL: can not open \"%s\" for writing", outfile);
@@ -308,6 +311,25 @@ int main( int argc, char* argv[] )
     fclose(out);
     /* print path to file if destination parameter is set */
 
+/*
+    printf("printing p:\n");
+    for(i=0; i<g.n; i++) {
+      for(j=0; j<g.n; j++) {
+        printf("%d ", *IDX_i(p_serial, g.n, i, j));
+      }
+      printf("\n");
+    }
+*/
+
+    if (dst >= 0) {
+      pathout = fopen(path_outfile, "w");
+      if ( pathout == NULL ) {
+          fprintf(stderr, "FATAL: can not open \"%s\" for writing", path_outfile);
+          exit(-1);
+      }
+      printPath(pathout, p_serial, g.n, src, dst);
+      fclose(pathout);
+    }
 
     return 0;
 }
