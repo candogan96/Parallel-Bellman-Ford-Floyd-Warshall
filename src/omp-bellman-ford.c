@@ -21,8 +21,7 @@
  * --------------------------------------------------------------------------
  *
  * This program computes single-source shortest paths on directed
- * graphs using Bellman-Ford algorithm and all-source shortest paths
- * using Floyd-Warshall algorithm.
+ * graphs using Bellman-Ford algorithm
  *
  * To compile this program:
  * gcc -fopenmp -std=c99 -Wall -Wpedantic omp-bellman-ford.c -o omp-bellman-ford -lm
@@ -66,7 +65,7 @@ void sort_edges(graph_t *g)
     qsort(g->edges, g->m, sizeof(edge_t), cmp_edges);
 }
 
-/* Set *v = min(*v, x), atomically; return 1 iff the value of *v changed */
+/* Set *v = min(*v, x), atomically; return 1 if the value of *v changed */
 static inline int atomicRelax(float *v, float x)
 {
     union {
@@ -279,6 +278,7 @@ void bellmanford_atomic(const graph_t* g, int s, float *d)
     fprintf(stderr, "bellmanford_atomic: %d iterations\n", niter);
 }
 
+/* editing */
 void bellmanford_atomic_inlined(const graph_t* g, int s, float *d)
 {
     const int n = g->n;
@@ -350,7 +350,7 @@ void bellmanford_none(const graph_t* g, int s, float *d)
     fprintf(stderr, "belmanford_none: %d iterations\n", niter);
 }
 
-/* Check distances. Return 0 iff d1 and d2 contain the same values (up
+/* Check distances. Return 0 if d1 and d2 contain the same values (up
    to a given tolerance), -1 otherwise. */
 int checkdist( float *d1, float *d2, int n)
 {
@@ -424,12 +424,6 @@ int main( int argc, char* argv[] )
     tstart = omp_get_wtime();
     bellmanford(&g, src, d_serial, p_serial);
     t_serial = omp_get_wtime() - tstart;
-/*
-    printf("node | cost | predecessor\n");
-  	for(i=0; i<g.n; i++) {
-  		printf("%d %f %d\n", i, d_serial[i], p_serial[i]);
-  	}
-*/
     fprintf(stderr, "Serial execution time....... %f\n", t_serial);
 
     tstart = omp_get_wtime();
@@ -450,11 +444,12 @@ int main( int argc, char* argv[] )
         exit(-1);
     }
 
-    /* print distances to stdout */
+    /* print distances to output file */
     for (i=0; i<g.n; i++) {
         fprintf(out, "d %d %d %f\n", src, i, d_serial[i]);
     }
     fclose(out);
+    /* print path to file if destination parameter is set */
     if (dst >= 0) {
       pathout = fopen(pathoutfile, "w");
       if ( pathout == NULL ) {
