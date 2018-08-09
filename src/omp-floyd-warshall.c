@@ -193,15 +193,21 @@ void floydwarshall(const graph_t* g, float *d, int *p)
         fflush(stdout);
       }
       float d1, d2;
-      //pragma omp parallel for
-#pragma omp parallel for collapse(2) default(none) shared(d, p, niter) private(d1, d2, i, j)
+      float *d_i, *d_niter = d + niter * n;
+
+#pragma omp parallel for default(none) shared(d, p, niter, d_niter) private(d1, d2, i, j, d_i)
       for(i=0; i<n; i++) {
+        d_i = d + i * n;
+        d1 = *(d_i + niter);
         for (j=0; j<n; j++) {
-            d1 = *IDX_f(d, n, i, niter);
-            d2 = *IDX_f(d, n, niter, j);
-            if (d1+d2 < *IDX_f(d, n, i, j) ) {
-              *IDX_f(d, n, i, j) = d1+d2;
-            //  *IDX_i(p, n, i, j) = niter;
+
+            if (isinf(d1))
+              break;
+
+            d2 = *(d_niter + j);
+
+            if (d1+d2 < *(d_i + j) ) {
+              *(d_i + j) = d1+d2;
             }
         }
       }
@@ -226,29 +232,19 @@ int checkdist( float *d1, float *d2, int n)
     return 0;
 }
 
-/*
-void printPath(FILE *f, int *p, int src, int dst) {
-    if (p[dst] != src)
-        printPath(f, p, src, p[dst]);
 
-    fprintf(f, "%d\n", dst);
-}
-*/
 
 int main( int argc, char* argv[] )
 {
     graph_t g;
-    int i, j, src = 0, dst = -1;
-    float *d_serial, *d_parallel;
-    int *p_serial, *p_parallel;
-    float tstart, t_serial, t_parallel;
+    int i, j;
+    float *d_serial;
+    int *p_serial;
+    float tstart, t_serial;
 
-    const char *infile, *outfile, *pathoutfile;
-    FILE *in, *out, *pathout;
-    if (argc == 6) {
-        dst = atoi(argv[4]);
-        pathoutfile = argv[5];
-    } else if ( argc != 3 ) {
+    const char *infile, *outfile;
+    FILE *in, *out;
+ if ( argc != 3 ) {
         fprintf(stderr, "Usage: %s infile outfile\n", argv[0]);
         return -1;
     }
@@ -271,16 +267,14 @@ int main( int argc, char* argv[] )
     const size_t sz = (g.n * g.n) * sizeof(*d_serial);
 
     d_serial = (float*)malloc(sz); assert(d_serial);
-    d_parallel = (float*)malloc(sz); assert(d_parallel);
 
     p_serial = (int*)malloc(g.n * g.n * sizeof(int)); assert(p_serial);
-    p_parallel = (int*)malloc(g.n * g.n * sizeof(int)); assert(p_parallel);
-
+/*
     if (src < 0 || src >= g.n || dst >= g.n) {
         fprintf(stderr, "FATAL: invalid source or destination node (should be within %d-%d)\n", 0, g.n-1);
         exit(-1);
     }
-
+*/
     tstart = omp_get_wtime();
     floydwarshall(&g, d_serial, p_serial);
     t_serial = omp_get_wtime() - tstart;
@@ -313,16 +307,7 @@ int main( int argc, char* argv[] )
     }
     fclose(out);
     /* print path to file if destination parameter is set */
-    /*
-    if (dst >= 0) {
-      pathout = fopen(pathoutfile, "w");
-      if ( pathout == NULL ) {
-          fprintf(stderr, "FATAL: can not open \"%s\" for writing", pathoutfile);
-          exit(-1);
-      }
-      printPath(pathout, p_serial, src, dst);
-      fclose(pathout);
-    }
-    */
+
+
     return 0;
 }
