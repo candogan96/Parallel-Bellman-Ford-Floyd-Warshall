@@ -229,15 +229,14 @@ void bellmanford(const graph_t* g, int s, float *d, int *p)
 {
     const int n = g->n;
     const int m = g->m;
-    int i, j, updated, niter = 0;
+    int i, j, updated, niter;
 
     for (i=0; i<n; i++) {
         d[i] = INFINITY;
     }
     d[s] = 0;
-    do {
+    for(niter=0; niter<n; niter++) {
         updated = 0;
-        niter++;
         for (j=0; j<m; j++) {
             const int src = g->edges[j].src;
             const int dst = g->edges[j].dst;
@@ -248,12 +247,26 @@ void bellmanford(const graph_t* g, int s, float *d, int *p)
                 updated = 1;
             }
         }
-    } while (updated);
+
+        if (0 == updated) {
+            break;
+        }
+    }
+
+    /* Another loop to check negative cycles */
+    for (j=0; j<m; j++) {
+        const int src = g->edges[j].src;
+        const int dst = g->edges[j].dst;
+        const float w = g->edges[j].w;
+        if ( d[src] + w < d[dst] ) {
+            fprintf(stderr, "Error: graph contains negative cycles.\n");
+        }
+    }
     fprintf(stderr, "bellmanford: %d iterations\n", niter);
 }
 
-/* Using atomic to protect updates to the new distances */
-void bellmanford_atomic(const graph_t* g, int s, float *d)
+/* Using "omp atomic write" to protect updates to the new distances */
+void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
 {
     const int n = g->n;
     const int m = g->m;
@@ -263,18 +276,38 @@ void bellmanford_atomic(const graph_t* g, int s, float *d)
         d[i] = INFINITY;
     }
     d[s] = 0.0f;
-    do {
+    for(niter=0; niter<n; niter++) {
         updated = 0;
-        niter++;
-#pragma omp parallel for default(none) shared(g, d) reduction(|:updated)
+#pragma omp parallel for default(none) shared(g, d, p) reduction(|:updated)
         for (j=0; j<m; j++) {
             const int src = g->edges[j].src;
             const int dst = g->edges[j].dst;
             const float w = g->edges[j].w;
-            int r = atomicRelax(&d[dst], d[src]+w);
-            updated |= r;
+
+            if ( d[src] + w < d[dst] ) {
+                int prec = p[dst];
+                #pragma omp atomic write
+                    d[dst] = d[src] + w;
+                //p[dst] = src;
+                __sync_bool_compare_and_swap(&p[dst], prec, src);
+                updated |= 1;
+            }
         }
-    } while (updated);
+
+        if (0 == updated) {
+          break;
+        }
+    }
+
+    /* Another loop to check negative cycles */
+    for (j=0; j<m; j++) {
+        const int src = g->edges[j].src;
+        const int dst = g->edges[j].dst;
+        const float w = g->edges[j].w;
+        if ( d[src] + w < d[dst] ) {
+            fprintf(stderr, "Error: graph contains negative cycles.\n");
+        }
+    }
     fprintf(stderr, "bellmanford_atomic: %d iterations\n", niter);
 }
 
@@ -289,9 +322,8 @@ void bellmanford_atomic_inlined(const graph_t* g, int s, float *d)
         d[i] = INFINITY;
     }
     d[s] = 0.0f;
-    do {
+    for(niter=0; niter<n; niter++) {
         updated = 0;
-        niter++;
 #pragma omp parallel for default(none) shared(g, d) reduction(|:updated)
         for (j=0; j<m; j++) {
             const int src = g->edges[j].src;
@@ -313,7 +345,20 @@ void bellmanford_atomic_inlined(const graph_t* g, int s, float *d)
                 updated |= (newval.vi != oldval.vi);
             }
         }
-    } while (updated);
+        if (0 == updated) {
+          break;
+        }
+    }
+
+    /* Another loop to check negative cycles */
+    for (j=0; j<m; j++) {
+        const int src = g->edges[j].src;
+        const int dst = g->edges[j].dst;
+        const float w = g->edges[j].w;
+        if ( d[src] + w < d[dst] ) {
+            fprintf(stderr, "Error: graph contains negative cycles.\n");
+        }
+    }
     fprintf(stderr, "bellmanford_atomic: %d iterations\n", niter);
 }
 
@@ -333,20 +378,32 @@ void bellmanford_none(const graph_t* g, int s, float *d)
         d[i] = INFINITY;
     }
     d[s] = 0.0f;
-    do {
+    for(niter=0; niter<n; niter++) {
         updated = 0;
-        niter++;
 #pragma omp parallel for default(none) shared(g, d) reduction(|:updated)
         for (j=0; j<m; j++) {
             const int src = g->edges[j].src;
             const int dst = g->edges[j].dst;
             const float w = g->edges[j].w;
             if ( d[src]+w < d[dst] ) {
-                updated = 1;
+                updated |= 1;
                 d[dst] = d[src]+w;
             }
         }
-    } while (updated);
+      if (0 == updated) {
+        break;
+      }
+    }
+
+    /* Another loop to check negative cycles */
+    for (j=0; j<m; j++) {
+        const int src = g->edges[j].src;
+        const int dst = g->edges[j].dst;
+        const float w = g->edges[j].w;
+        if ( d[src] + w < d[dst] ) {
+            fprintf(stderr, "Error: graph contains negative cycles.\n");
+        }
+    }
     fprintf(stderr, "belmanford_none: %d iterations\n", niter);
 }
 
@@ -433,7 +490,7 @@ int main( int argc, char* argv[] )
     checkdist(d_serial, d_none, g.n);
 
     tstart = omp_get_wtime();
-    bellmanford_atomic(&g, src, d_atomic);
+    bellmanford_atomic(&g, src, d_atomic, p_atomic);
     t_atomic = omp_get_wtime() - tstart;
     fprintf(stderr, "Par. exec. time (atomic).... %f (%.2fx)\n", t_atomic, t_serial/t_atomic);
     checkdist(d_serial, d_atomic, g.n);
