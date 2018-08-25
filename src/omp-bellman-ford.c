@@ -265,7 +265,18 @@ void bellmanford(const graph_t* g, int s, float *d, int *p)
     fprintf(stderr, "bellmanford: %d iterations\n", niter);
 }
 
-/* Using "omp atomic write" to protect updates to the new distances */
+/* Compute shortest paths from node s using Bellman-Ford
+   algorithm. This is a parallel implementation making use of mutex locks
+   provided by OpenMP. This version is slightly
+   optimized with respect to the "canonical" implementation of the
+   Bellman-Ford algorithm: if no distance is updated after a
+   relaxation phase, this function terminates immediately since no
+   distances will be updated in future iterations.
+   g: the graph structure
+   s: source node id
+   d: pointer of distances array
+   p: pointer of predecessors array
+   */
 void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
 {
     const int n = g->n;
@@ -321,7 +332,6 @@ void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
     fprintf(stderr, "bellmanford_atomic: %d iterations\n", niter);
 }
 
-/* editing */
 void bellmanford_atomic_inlined(const graph_t* g, int s, float *d)
 {
     const int n = g->n;
