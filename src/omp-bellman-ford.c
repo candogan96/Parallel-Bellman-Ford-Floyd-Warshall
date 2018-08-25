@@ -302,9 +302,8 @@ void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
 
             if (!isinf(d[src]) && !isinf(w)) {
               omp_set_lock(&locks[dst]);
-              int d_new = (int)(d[src] + w);
-
-              if ( d[dst] - d_new > 0) {
+              float d_new = d[src] + w;
+              if (d_new < d[dst]) {
                   d[dst] = d_new;
                   p[dst] = src;
                   updated |= 1;
