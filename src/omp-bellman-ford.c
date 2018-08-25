@@ -284,15 +284,16 @@ void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
             const int dst = g->edges[j].dst;
             const float w = g->edges[j].w;
 
-            if ( d[src] + w < d[dst] ) {
-                int prec = p[dst];
-                #pragma omp atomic write
-                    d[dst] = d[src] + w;
-                //p[dst] = src;
-                __sync_bool_compare_and_swap(&p[dst], prec, src);
-                updated |= 1;
+            float d_old = d[dst];
+            #pragma omp atomic write
+              d[dst] = (d[src] + w) < d_old ? (d[src] + w) : d_old;
+
+            if (d_old - d[dst] > 1e-5) {
+                  p[dst] = src;
+                  updated |= 1;
             }
         }
+
 
         if (0 == updated) {
           break;
@@ -306,6 +307,7 @@ void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
         const float w = g->edges[j].w;
         if ( d[src] + w < d[dst] ) {
             fprintf(stderr, "Error: graph contains negative cycles.\n");
+            break;
         }
     }
     fprintf(stderr, "bellmanford_atomic: %d iterations\n", niter);
