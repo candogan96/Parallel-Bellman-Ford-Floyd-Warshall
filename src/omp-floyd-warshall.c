@@ -309,7 +309,7 @@ void printPath(FILE *f, int *p, int n, int src, int dst) {
 int main( int argc, char* argv[] )
 {
     graph_t g;
-    int i, j, src, dst = -1;
+    int i, j, src = -1, dst = -1;
     float *d_serial, *d_parallel;
     int *p_serial, *p_parallel;
     float tstart, t_serial, t_parallel;
@@ -387,7 +387,7 @@ int main( int argc, char* argv[] )
     }
 */
 
-    if (dst >= 0) {
+    if (path_outfile != NULL && src >= 0 && dst >= 0) {
       pathout = fopen(path_outfile, "w");
       if ( pathout == NULL ) {
           fprintf(stderr, "FATAL: can not open \"%s\" for writing", path_outfile);
@@ -399,7 +399,7 @@ int main( int argc, char* argv[] )
     free(d_serial);
     free(d_parallel);
     free(p_serial);
-    free(d_parallel);
+    free(p_parallel);
 
     return 0;
 }
