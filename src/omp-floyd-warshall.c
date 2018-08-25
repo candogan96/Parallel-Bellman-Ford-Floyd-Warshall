@@ -217,7 +217,67 @@ void floydwarshall(const graph_t* g, float *d, int *p)
         }
       }
     }
-    fprintf(stderr, "floydwarshall: %d iterations\n", niter);
+    fprintf(stderr, "\nfloydwarshall_parallel: %d iterations\n", niter);
+}
+
+void floydwarshall_serial(const graph_t* g, float *d, int *p)
+{
+    const int n = g->n;
+    const int m = g->m;
+    int i, j, niter;
+
+    // set all distances to INFINITY
+    for (i=0; i<n; i++) {
+        for(j=0; j<n; j++)
+            *IDX_f(d, n, i, j) = INFINITY;
+    }
+    // set distances between a node and self to zero
+    for(i=0; i<n; i++){
+      *IDX_f(d, n, i, i) = 0.0f;
+      *IDX_i(p, n, i, i) = i;
+    }
+
+    // set initial distances to edges weights
+    int src, dst;
+    float w;
+    for(i=0; i<m; i++) {
+        src = g->edges[i].src;
+        dst = g->edges[i].dst;
+        w = g->edges[i].w;
+
+        *IDX_f(d, n, src, dst) = w;
+        *IDX_i(p, n, src, dst) = src;
+    }
+
+    // start algorythm
+    for(niter=0; niter<n; niter++){
+      if (niter%100 == 0) {
+        printf(".");
+        fflush(stdout);
+      }
+      float d1, d2;
+      float *d_i, *d_niter = d + niter * n;
+      int *p_i;
+
+      for(i=0; i<n; i++) {
+        d_i = d + i * n;
+        p_i = p + i * n;
+        d1 = *(d_i + niter);
+        for (j=0; j<n; j++) {
+
+            if (isinf(d1))
+              break;
+
+            d2 = *(d_niter + j);
+
+            if (d1+d2 < *(d_i + j) ) {
+              *(d_i + j) = d1+d2;
+              *(p_i + j) = *IDX_i(p, n, niter, j);
+            }
+        }
+      }
+    }
+    fprintf(stderr, "\nfloydwarshall_serial: %d iterations\n", niter);
 }
 
 
@@ -250,9 +310,9 @@ int main( int argc, char* argv[] )
 {
     graph_t g;
     int i, j, src, dst = -1;
-    float *d_serial;
-    int *p_serial;
-    float tstart, t_serial;
+    float *d_serial, *d_parallel;
+    int *p_serial, *p_parallel;
+    float tstart, t_serial, t_parallel;
 
     const char *infile, *outfile, *path_outfile;
     FILE *in, *out, *pathout;
@@ -283,8 +343,9 @@ int main( int argc, char* argv[] )
     const size_t sz = (g.n * g.n) * sizeof(*d_serial);
 
     d_serial = (float*)malloc(sz); assert(d_serial);
-
+    d_parallel = (float*)malloc(sz); assert(d_parallel);
     p_serial = (int*)malloc(g.n * g.n * sizeof(int)); assert(p_serial);
+    p_parallel = (int*)malloc(g.n * g.n * sizeof(int)); assert(p_parallel);
 /*
     if (src < 0 || src >= g.n || dst >= g.n) {
         fprintf(stderr, "FATAL: invalid source or destination node (should be within %d-%d)\n", 0, g.n-1);
@@ -292,9 +353,14 @@ int main( int argc, char* argv[] )
     }
 */
     tstart = omp_get_wtime();
-    floydwarshall(&g, d_serial, p_serial);
+    floydwarshall_serial(&g, d_serial, p_serial);
     t_serial = omp_get_wtime() - tstart;
     fprintf(stderr, "Serial execution time....... %f\n", t_serial);
+
+    tstart = omp_get_wtime();
+    floydwarshall(&g, d_serial, p_serial);
+    t_parallel = omp_get_wtime() - tstart;
+    fprintf(stderr, "Parallel execution time....... %f (%.2fx)\n", t_parallel, t_serial/t_parallel);
 
 
     out = fopen(outfile, "w");
@@ -330,6 +396,10 @@ int main( int argc, char* argv[] )
       printPath(pathout, p_serial, g.n, src, dst);
       fclose(pathout);
     }
+    free(d_serial);
+    free(d_parallel);
+    free(p_serial);
+    free(d_parallel);
 
     return 0;
 }
