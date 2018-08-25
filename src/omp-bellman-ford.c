@@ -276,21 +276,29 @@ void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
         d[i] = INFINITY;
     }
     d[s] = 0.0f;
+
+    omp_lock_t locks[n];
+    for (i=0; i< n; i++)
+        omp_init_lock(&locks[i]);
+
     for(niter=0; niter<n; niter++) {
         updated = 0;
-#pragma omp parallel for default(none) shared(g, d, p) reduction(|:updated)
+#pragma omp parallel for default(none) shared(g, d, p, locks) reduction(|:updated)
         for (j=0; j<m; j++) {
             const int src = g->edges[j].src;
             const int dst = g->edges[j].dst;
             const float w = g->edges[j].w;
 
-            float d_old = d[dst];
-            #pragma omp atomic write
-              d[dst] = (d[src] + w) < d_old ? (d[src] + w) : d_old;
+            if (!isinf(d[src]) && !isinf(w)) {
+              omp_set_lock(&locks[dst]);
+              int d_new = (int)(d[src] + w);
 
-            if (d_old - d[dst] > 1e-5) {
+              if ( d[dst] - d_new > 0) {
+                  d[dst] = d_new;
                   p[dst] = src;
                   updated |= 1;
+              }
+              omp_unset_lock(&locks[dst]);
             }
         }
 
@@ -370,7 +378,7 @@ void bellmanford_atomic_inlined(const graph_t* g, int s, float *d)
    in a race condition. However, for some reasons that I do not
    understand, the program seems to always compute the correct
    distance on the test cases I tried. */
-void bellmanford_none(const graph_t* g, int s, float *d)
+void bellmanford_none(const graph_t* g, int s, float *d, int *p)
 {
     const int n = g->n;
     const int m = g->m;
@@ -382,7 +390,7 @@ void bellmanford_none(const graph_t* g, int s, float *d)
     d[s] = 0.0f;
     for(niter=0; niter<n; niter++) {
         updated = 0;
-#pragma omp parallel for default(none) shared(g, d) reduction(|:updated)
+#pragma omp parallel for default(none) shared(g, d, p) reduction(|:updated)
         for (j=0; j<m; j++) {
             const int src = g->edges[j].src;
             const int dst = g->edges[j].dst;
@@ -390,6 +398,7 @@ void bellmanford_none(const graph_t* g, int s, float *d)
             if ( d[src]+w < d[dst] ) {
                 updated |= 1;
                 d[dst] = d[src]+w;
+                p[dst] = src;
             }
         }
       if (0 == updated) {
@@ -486,7 +495,7 @@ int main( int argc, char* argv[] )
     fprintf(stderr, "Serial execution time....... %f\n", t_serial);
 
     tstart = omp_get_wtime();
-    bellmanford_none(&g, src, d_none);
+    bellmanford_none(&g, src, d_none, p_none);
     t_none = omp_get_wtime() - tstart;
     fprintf(stderr, "Par. exec. time (no sync.).. %f (%.2fx)\n", t_none, t_serial/t_none);
     checkdist(d_serial, d_none, g.n);
