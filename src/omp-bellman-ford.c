@@ -518,7 +518,7 @@ int main( int argc, char* argv[] )
     }
     fclose(out);
     /* print path to file if destination parameter is set */
-    if (dst >= 0) {
+    if (pathoutfile != NULL && dst >= 0) {
       pathout = fopen(pathoutfile, "w");
       if ( pathout == NULL ) {
           fprintf(stderr, "FATAL: can not open \"%s\" for writing", pathoutfile);
