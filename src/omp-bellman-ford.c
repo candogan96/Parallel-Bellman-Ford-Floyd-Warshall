@@ -300,15 +300,16 @@ void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
             const int dst = g->edges[j].dst;
             const float w = g->edges[j].w;
 
-            if (!isinf(d[src]) && !isinf(w)) {
-              omp_set_lock(&locks[dst]);
-              float d_new = d[src] + w;
-              if (d_new < d[dst]) {
-                  d[dst] = d_new;
-                  p[dst] = src;
-                  updated |= 1;
-              }
-              omp_unset_lock(&locks[dst]);
+
+            if (!isinf(d[src]) && !isinf(w) && d[src] + w < d[dst]) {
+                omp_set_lock(&locks[dst]);
+                float d_new = d[src] + w;
+                if (d_new < d[dst]) {
+                    d[dst] = d_new;
+                    p[dst] = src;
+                    updated |= 1;
+                }
+                omp_unset_lock(&locks[dst]);
             }
         }
 
