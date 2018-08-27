@@ -277,8 +277,7 @@ void bellmanford(const graph_t* g, int s, float *d, int *p)
    d: pointer of distances array
    p: pointer of predecessors array
    */
-void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
-{
+void bellmanford_atomic(const graph_t* g, int s, float *d, int* p, omp_lock_t *locks) {
     const int n = g->n;
     const int m = g->m;
     int i, j, updated, niter = 0;
@@ -287,10 +286,6 @@ void bellmanford_atomic(const graph_t* g, int s, float *d, int* p)
         d[i] = INFINITY;
     }
     d[s] = 0.0f;
-
-    omp_lock_t locks[n];
-    for (i=0; i< n; i++)
-        omp_init_lock(&locks[i]);
 
     for(niter=0; niter<n; niter++) {
         updated = 0;
@@ -510,8 +505,14 @@ int main( int argc, char* argv[] )
     fprintf(stderr, "Par. exec. time (no sync.).. %f (%.2fx)\n", t_none, t_serial/t_none);
     checkdist(d_serial, d_none, g.n);
 
+    omp_lock_t *locks;
+    locks = (omp_lock_t*)malloc(g.n * sizeof(omp_lock_t)); assert(locks);
+
+    for (i=0; i< g.n; i++)
+        omp_init_lock(&locks[i]);
+
     tstart = omp_get_wtime();
-    bellmanford_atomic(&g, src, d_atomic, p_atomic);
+    bellmanford_atomic(&g, src, d_atomic, p_atomic, locks);
     t_atomic = omp_get_wtime() - tstart;
     fprintf(stderr, "Par. exec. time (atomic).... %f (%.2fx)\n", t_atomic, t_serial/t_atomic);
     checkdist(d_serial, d_atomic, g.n);
