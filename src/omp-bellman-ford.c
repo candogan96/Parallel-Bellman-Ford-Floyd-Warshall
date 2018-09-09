@@ -306,8 +306,8 @@ void bellmanford_atomic(const graph_t* g, int s, float *d, int* p, omp_lock_t *l
                     p[dst] = src;
                     updated |= 1;
                 }
-                omp_unset_lock(&locks[first]);
                 omp_unset_lock(&locks[second]);
+                omp_unset_lock(&locks[first]);
             }
         }
 
